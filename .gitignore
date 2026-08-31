@@ -1,8 +1,19 @@
-# Project place file
-/CSSG.rbxlx
+# Roblox place / model files (build จาก rojo ไม่ต้องเก็บเข้า repo)
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
 
 # Roblox Studio lock files
-/*.rbxlx.lock
-/*.rbxl.lock
+*.rbxl.lock
+*.rbxlx.lock
 
+# ผลลัพธ์จากการ build
+/build/
+
+# ไฟล์ที่เครื่องมือสร้างให้ (luau-lsp / rojo sourcemap)
 sourcemap.json
+
+# OS
+.DS_Store
+Thumbs.db
