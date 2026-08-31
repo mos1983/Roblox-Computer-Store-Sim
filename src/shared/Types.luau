@@ -8,6 +8,7 @@ export type Socket = Enums.Socket
 export type RamType = Enums.RamType
 export type FormFactor = Enums.FormFactor
 export type Category = Enums.Category
+export type UseCase = Enums.UseCase
 export type StorageKind = Enums.StorageKind
 export type PsuEfficiency = Enums.PsuEfficiency
 
@@ -144,6 +145,26 @@ export type Build = {
 	Storage: Storage?,
 	PSU: PSU?,
 	Case: Case?,
+}
+
+--[[
+	ความต้องการสเปกของซอฟต์แวร์ เขียนในหน่วยเดียวกับ perfScore ของชิ้นส่วน (0-100)
+	เทียบตรง ๆ ได้เลย เช่น build.CPU.perfScore >= req.minSpec.CPU
+	GPU = 0 หมายถึงการ์ดจอออนบอร์ด (hasIGPU) เพียงพอ ไม่ต้องมีการ์ดจอแยก
+]]
+export type SpecProfile = {
+	CPU: number,
+	GPU: number,
+	RAM: number,
+	Storage: number,
+}
+
+export type SoftwareRequirement = {
+	id: string,
+	name: string,
+	useCase: UseCase,
+	minSpec: SpecProfile,          -- ต่ำกว่านี้คือรันไม่ไหว
+	recommendedSpec: SpecProfile,  -- ระดับที่ลูกค้าพอใจเต็มคะแนน
 }
 
 return {}
