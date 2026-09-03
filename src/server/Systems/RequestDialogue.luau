@@ -18,15 +18,24 @@ local Greetings: { string } = table.freeze({
 	"Excuse me, do you have a minute?",
 	"Hey, good to see you!",
 	"Sorry to bother you!",
+	"Pardon me, are you available to help?",
+	"Hey, good to see you!",
+	"Yo! Are you the one building the PCs?",
+	"What's up!",
+	"Hey man, got a quick question for you.",
 })
 
 -- คลังคำ: ประโยคเกริ่นว่ามาหาคอมพิวเตอร์
 local Intents: { string } = table.freeze({
 	"I'm looking to buy a PC.",
-	"I'm in the market for a new computer.",
+	"I think it's time for an upgrade.",
 	"I want to build a new rig.",
 	"I've been meaning to get a desktop for a while now.",
-	"I need a new machine for the house.",
+	"I'm ready to build an absolute beast of a PC.",
+	"Hey, I'm looking for a new setup.",
+	"Hey, I'm looking for a new setup.",
+	"I need a computer, but I honestly have no idea where to start.",
+	"My friend told me to come here for a new computer.",
 })
 
 -- คลังคำ: ประโยคบอกงบ ตัวแปร {min} {max} คือช่วงงบที่จัดรูปแล้ว
@@ -36,6 +45,12 @@ local BudgetPhrases: { string } = table.freeze({
 	"Let's keep it in the {min} to {max} baht range.",
 	"I've got roughly {min} to {max} baht set aside.",
 	"Anything from {min} up to {max} baht works for me.",
+	"I'd like to stay within the {min} to {max} baht mark.",
+	"I've got around {min} to {max} baht to drop on this.",
+	"Looking at {min} to {max} baht for the whole setup.",
+	"I'd say {min} to {max} baht is what I'm willing to spend.",
+	"I can start at {min} baht, but absolutely no more than {max} baht.",
+	"Please keep the total between {min} and {max} baht.",
 })
 
 --[[
@@ -46,10 +61,12 @@ local BudgetPhrases: { string } = table.freeze({
 ]]
 local DetailTemplates: { [Difficulty]: { string } } = table.freeze({
 	Easy = table.freeze({
-		"I need a CPU around {cpu}, a GPU near {gpu}, RAM about {ram}, and storage around {storage}.",
+		"Here's my checklist: {cpu} for the processor, {gpu} for graphics, {ram} for memory, and {storage} for storage.",
 		"My notes say CPU {cpu}, GPU {gpu}, RAM {ram}, storage {storage} — can you match that?",
 		"A friend wrote the numbers down for me: CPU {cpu}, GPU {gpu}, RAM {ram}, storage {storage}.",
 		"Aim for roughly {cpu} on the CPU, {gpu} on the GPU, {ram} on the RAM, and {storage} on storage.",
+		"Make sure the specs hit at least CPU {cpu}, GPU {gpu}, RAM {ram}, and storage {storage}.",
+		"Just give me a build with {cpu} CPU, {gpu} GPU, {ram} RAM, and {storage} storage.",
 	}),
 
 	Normal = table.freeze({
@@ -57,6 +74,11 @@ local DetailTemplates: { [Difficulty]: { string } } = table.freeze({
 		"It has to handle {software} without stuttering.",
 		"I'll be using it for {software}, so please size it for that.",
 		"As long as {software} runs nicely, I'll be happy.",
+		"The main goal is to get {software} running flawlessly.",
+		"If it can run {software} at a decent frame rate, we're good.",
+		"I do a lot of work in {software}, so build it around that requirement.",
+		"Make sure it meets the recommended specs for {software}.",
+			
 	}),
 
 	Hard = table.freeze({
@@ -64,6 +86,9 @@ local DetailTemplates: { [Difficulty]: { string } } = table.freeze({
 		"It's for {useCase}, nothing too fancy.",
 		"I'll be using it for {useCase} most of the time.",
 		"Honestly, {useCase} is all I care about — you know better than me what that needs.",
+		"I don't know much about parts, just make sure it's good for {useCase}.",
+		"Whatever works best for {useCase} is exactly what I want.",
+		"Can you build me a solid rig optimized for {useCase}?",
 	}),
 })
 
@@ -77,6 +102,11 @@ local UseCaseDescriptions: { [UseCase]: { string } } = table.freeze({
 		"playing games with my friends",
 		"some serious gaming",
 		"PC games, mostly the new ones",
+		"playing the latest AAA titles",
+		"chilling and playing games after work",
+		"running intense gaming sessions",
+		"competitive gaming and esports",
+		"grinding out some heavy PC games",
 	}),
 
 	editing = table.freeze({
@@ -84,6 +114,11 @@ local UseCaseDescriptions: { [UseCase]: { string } } = table.freeze({
 		"editing the clips I shoot",
 		"photo and video work",
 		"putting videos together for my channel",
+		"grinding out some heavy PC games",
+		"color grading and 4K video editing",
+		"creative workloads like Photoshop and Premiere",
+		"rendering out massive project files",
+		"digital art and video production",
 	}),
 
 	office = table.freeze({
@@ -91,6 +126,11 @@ local UseCaseDescriptions: { [UseCase]: { string } } = table.freeze({
 		"documents and spreadsheets",
 		"working from home — mail, docs, meetings",
 		"everyday paperwork",
+		"basic productivity tasks",
+		"handling tons of emails and heavy Excel sheets",
+		"daily remote work and Zoom calls",
+		"general web browsing and word processing",
+		"light administrative work",
 	}),
 
 	streaming = table.freeze({
@@ -98,6 +138,11 @@ local UseCaseDescriptions: { [UseCase]: { string } } = table.freeze({
 		"streaming my gameplay online",
 		"going live for my viewers",
 		"streaming and gaming at the same time",
+		"broadcasting my gameplay to Twitch",
+		"running a high-quality live broadcast",
+		"live streaming and chatting with my audience",
+		"pushing a smooth stream without dropping frames",
+		"VTubing and interacting with my chat",
 	}),
 })
 
