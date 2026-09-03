@@ -16,6 +16,9 @@ export type PsuEfficiency = "80+" | "80+ Bronze" | "80+ Gold" | "80+ Platinum"
 -- ประเภทการใช้งานของลูกค้า ใช้จับคู่โจทย์กับ SoftwareRequirements
 export type UseCase = "gaming" | "editing" | "office" | "streaming"
 
+-- ระดับความยากของโจทย์ เรียงจากง่ายไปยาก
+export type Difficulty = "Easy" | "Normal" | "Hard"
+
 local Enums = {
 	Socket = table.freeze({
 		AM5 = "AM5" :: Socket,
@@ -64,6 +67,12 @@ local Enums = {
 		Streaming = "streaming" :: UseCase,
 	}),
 
+	Difficulty = table.freeze({
+		Easy = "Easy" :: Difficulty,
+		Normal = "Normal" :: Difficulty,
+		Hard = "Hard" :: Difficulty,
+	}),
+
 	-- ลิสต์แบบเรียงลำดับ ใช้ตอน loop สร้าง UI หรือสุ่มโจทย์ (ลำดับคงที่เสมอ)
 	SocketList = table.freeze({ "AM5", "AM4", "LGA1700" } :: { Socket }),
 	RamTypeList = table.freeze({ "DDR4", "DDR5" } :: { RamType }),
@@ -72,6 +81,7 @@ local Enums = {
 		"CPU", "Mainboard", "RAM", "GPU", "Storage", "PSU", "Case",
 	} :: { Category }),
 	UseCaseList = table.freeze({ "gaming", "editing", "office", "streaming" } :: { UseCase }),
+	DifficultyList = table.freeze({ "Easy", "Normal", "Hard" } :: { Difficulty }),
 
 	-- ขอบเขตค่าตัวเลขที่ใช้ตรวจความถูกต้องของข้อมูลชิ้นส่วน
 	MIN_PERF_SCORE = 0,

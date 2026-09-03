@@ -23,3 +23,9 @@
 2. PC Building — เลือกและประกอบชิ้นส่วน 7 หมวด
 3. Compatibility — ตรวจ socket, ramType, watt, formFactor
 4. Scoring — FitScore 50% + BudgetScore 30% + BalanceScore 20%
+
+## กฎสำคัญ
+- targetSpec (เฉลย) ห้ามส่งไปฝั่ง client เด็ดขาด ส่งได้เฉพาะ CustomerRequestPublic
+- ระบบสุ่มทุกตัวต้องใช้ Random.new(seed) ห้ามใช้ math.random
+- TODO: สูตรงบประมาณตอนนี้เป็นค่าประมาณ ต้องเปลี่ยนไปคิดจากราคาจริงในแคตตาล็อกเมื่อมีครบ 7 หมวด
+- TODO: difficulty จะขึ้นกับจำนวนวันที่ผ่านไป (Day 60+ เจอ Hard บ่อยขึ้น) ยังไม่ทำในเทอมนี้

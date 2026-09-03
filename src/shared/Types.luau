@@ -11,6 +11,7 @@ export type Category = Enums.Category
 export type UseCase = Enums.UseCase
 export type StorageKind = Enums.StorageKind
 export type PsuEfficiency = Enums.PsuEfficiency
+export type Difficulty = Enums.Difficulty
 
 --[[
 	field ร่วมที่ชิ้นส่วนทุกหมวดต้องมี
@@ -165,6 +166,28 @@ export type SoftwareRequirement = {
 	useCase: UseCase,
 	minSpec: SpecProfile,          -- ต่ำกว่านี้คือรันไม่ไหว
 	recommendedSpec: SpecProfile,  -- ระดับที่ลูกค้าพอใจเต็มคะแนน
+}
+
+-- โจทย์ลูกค้า 1 ราย (server เท่านั้นที่เห็นครบ)
+export type CustomerRequest = {
+	id: string,              -- เช่น "req_0001"
+	difficulty: Difficulty,
+	useCase: UseCase,
+	softwareId: string,      -- อ้างอิงกลับไป SoftwareRequirements
+	softwareName: string,
+	targetSpec: SpecProfile, -- เฉลย client ห้ามเห็น
+	weights: SpecProfile,    -- น้ำหนักตาม useCase ใช้ตอนคิด FitScore
+	budgetMin: number,
+	budgetMax: number,
+}
+
+-- ข้อมูลที่ปลอดภัยพอจะส่งให้ client
+export type CustomerRequestPublic = {
+	id: string,
+	difficulty: Difficulty,
+	dialogue: string,
+	budgetMin: number,
+	budgetMax: number,
 }
 
 return {}
