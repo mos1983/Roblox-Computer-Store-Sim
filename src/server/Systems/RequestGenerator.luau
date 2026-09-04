@@ -19,6 +19,7 @@ local Types = require(Shared.Types)
 local Enums = require(Shared.Data.Enums)
 local RequestConfig = require(Shared.Config.RequestConfig)
 local SoftwareRequirements = require(Shared.Data.SoftwareRequirements)
+local CatalogInspector = require(Shared.Data.CatalogInspector)
 
 type Difficulty = Types.Difficulty
 
@@ -61,10 +62,19 @@ local function rollTargetSpec(software: Types.SoftwareRequirement, difficulty: D
 end
 
 --[[
-	ประมาณราคาเครื่องที่ตรงตาม targetSpec
-	TODO: ตอนนี้ใช้สูตรประมาณใน RequestConfig ต้องเปลี่ยนไปคิดจากราคาจริงในแคตตาล็อกเมื่อมีครบ 7 หมวด
+	ราคาเครื่องที่ตรงตาม targetSpec — คิดจากราคาจริงในแคตตาล็อก
+	CatalogInspector จะประกอบ "ชุดที่ถูกที่สุดที่ตอบโจทย์ได้และเข้ากันได้จริง" ครบทั้ง 7 หมวด
+	แล้วคืนราคารวมมา ตัวเลขนี้จึงเป็นพื้นราคาจริงที่ผู้เล่นต้องจ่ายอย่างน้อยที่สุด
+	ช่วงงบที่คูณต่อจากนี้ (BudgetRange) จึงเป็นช่วงที่ซื้อของได้จริงเสมอ
+
+	ถ้าประกอบชุดไม่ได้ (ไม่ควรเกิด แต่กันไว้) ค่อยตกกลับไปใช้สูตรประมาณเดิมใน RequestConfig
 ]]
 local function estimateCost(targetSpec: Types.SpecProfile): number
+	local build = CatalogInspector.findReferenceBuild(targetSpec)
+	if build ~= nil then
+		return build.totalPrice
+	end
+
 	local total = RequestConfig.BudgetEstimate.BASE_COST
 
 	for _, key in SPEC_KEYS do

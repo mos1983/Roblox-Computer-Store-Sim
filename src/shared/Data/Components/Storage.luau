@@ -1,7 +1,7 @@
 --!strict
--- Storage.luau — แคตตาล็อกที่เก็บข้อมูล 5 รุ่น ครบทั้ง HDD / SATA_SSD / NVMe
+-- Storage.luau — แคตตาล็อกที่เก็บข้อมูล 6 รุ่น ครบทั้ง HDD / SATA_SSD / NVMe
 -- แกนหลักที่ผู้เล่นต้องเรียนรู้: HDD ถูกและจุเยอะแต่ช้ามาก, NVMe เร็วสุดแต่แพงต่อ GB
--- readSpeedMBps อิงความเร็วจริงตามชนิด: HDD ~150, SATA_SSD ~550 (ชนกำแพง SATA III), NVMe 3500-7000
+-- readSpeedMBps อิงความเร็วจริงตามชนิด: HDD 150-190, SATA_SSD ~550 (ชนกำแพง SATA III), NVMe 3500-7000
 -- ราคาเป็นบาท อ้างอิงราคาตลาดไทยโดยประมาณ (JIB/Advice) ไว้ปรับได้ที่นี่ที่เดียว
 -- perfScore ต้องอยู่ในช่วงของ tier: t1=0-20, t2=21-40, t3=41-60, t4=61-80, t5=81-100
 
@@ -15,11 +15,24 @@ local Storages: { Types.Storage } = {
 		category = "Storage",
 		price = 1690,
 		watt = 6, -- มอเตอร์จานหมุนกินไฟมากกว่า SSD
-		perfScore = 8,
+		perfScore = 12,
 		tier = 1,
 		storageKind = "HDD",
 		sizeGB = 2000,
 		readSpeedMBps = 150,
+	},
+
+	{
+		id = "sto_hdd_4tb",
+		name = "Toshiba P300 4TB 7200RPM",
+		category = "Storage",
+		price = 3290,
+		watt = 8, -- จานเยอะกว่า กินไฟมากกว่ารุ่น 2TB
+		perfScore = 19,
+		tier = 1,
+		storageKind = "HDD",
+		sizeGB = 4000,
+		readSpeedMBps = 190, -- ความหนาแน่นข้อมูลต่อจานสูงกว่า อ่านต่อเนื่องได้เร็วกว่า 2TB
 	},
 
 	-- tier 2 — SSD ราคาประหยัด ใส่ระบบปฏิบัติการก็เร็วขึ้นชัดเจน
@@ -29,7 +42,7 @@ local Storages: { Types.Storage } = {
 		category = "Storage",
 		price = 990,
 		watt = 3,
-		perfScore = 30,
+		perfScore = 28,
 		tier = 2,
 		storageKind = "SATA_SSD",
 		sizeGB = 480,
@@ -43,7 +56,7 @@ local Storages: { Types.Storage } = {
 		category = "Storage",
 		price = 1990,
 		watt = 4,
-		perfScore = 48,
+		perfScore = 43,
 		tier = 3,
 		storageKind = "SATA_SSD",
 		sizeGB = 1000,
@@ -57,7 +70,7 @@ local Storages: { Types.Storage } = {
 		category = "Storage",
 		price = 2490,
 		watt = 6,
-		perfScore = 70,
+		perfScore = 64,
 		tier = 4,
 		storageKind = "NVMe",
 		sizeGB = 1000,

@@ -7,6 +7,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage.Shared.Types)
+local CatalogInspector = require(ReplicatedStorage.Shared.Data.CatalogInspector)
 
 type Difficulty = Types.Difficulty
 type UseCase = Types.UseCase
@@ -55,18 +56,19 @@ local BudgetPhrases: { string } = table.freeze({
 
 --[[
 	คลังคำ: รายละเอียดความต้องการ แยกตามระดับความยาก
-	- Easy   : เปิดเผยตัวเลข targetSpec ตรง ๆ ({cpu} {gpu} {ram} {storage})
+	- Easy   : บอกเป็นชิ้นส่วนจริง ({cpu} {gpu} = ชื่อรุ่น, {ram} {storage} = ความจุ)
+	           ไม่ใช่ตัวเลข perfScore เพราะ perfScore เป็นหน่วยภายในของเกม ลูกค้าไม่พูดแบบนั้น
 	- Normal : บอกแค่ชื่อซอฟต์แวร์ ({software}) ผู้เล่นต้องไปเปิดตารางสเปกเอง
 	- Hard   : บอกแค่ลักษณะการใช้งานกว้าง ๆ ({useCase}) ต้องเดาซอฟต์แวร์เอง
 ]]
 local DetailTemplates: { [Difficulty]: { string } } = table.freeze({
 	Easy = table.freeze({
-		"Here's my checklist: {cpu} for the processor, {gpu} for graphics, {ram} for memory, and {storage} for storage.",
-		"My notes say CPU {cpu}, GPU {gpu}, RAM {ram}, storage {storage} — can you match that?",
-		"A friend wrote the numbers down for me: CPU {cpu}, GPU {gpu}, RAM {ram}, storage {storage}.",
-		"Aim for roughly {cpu} on the CPU, {gpu} on the GPU, {ram} on the RAM, and {storage} on storage.",
-		"Make sure the specs hit at least CPU {cpu}, GPU {gpu}, RAM {ram}, and storage {storage}.",
-		"Just give me a build with {cpu} CPU, {gpu} GPU, {ram} RAM, and {storage} storage.",
+		"Here's my checklist: {cpu} for the processor, {gpu} for graphics, {ram} of memory, and a {storage} for storage.",
+		"My notes say {cpu}, {gpu}, {ram} of RAM, and a {storage} — can you match that?",
+		"A friend wrote it all down for me: {cpu}, {gpu}, {ram} of RAM, and a {storage}.",
+		"I'm after {cpu} paired with {gpu}, {ram} of memory, and a {storage}.",
+		"Make sure it has {cpu}, {gpu}, {ram} of RAM, and a {storage}.",
+		"Just give me a build with {cpu}, {gpu}, {ram} of RAM, and a {storage}.",
 	}),
 
 	Normal = table.freeze({
@@ -146,7 +148,21 @@ local UseCaseDescriptions: { [UseCase]: { string } } = table.freeze({
 	}),
 })
 
--- คลังคำ: ประโยคเสริมของระดับ Easy ตอน targetSpec.GPU = 0 (การ์ดจอออนบอร์ดเอาอยู่)
+--[[
+	คลังคำ: เทมเพลตระดับ Easy แบบไม่มีการ์ดจอแยก (ใช้ตอนชุดอ้างอิงใช้การ์ดจอออนบอร์ด)
+	แยกลิสต์ออกมาเลยแทนที่จะยัดคำว่า "onboard graphics" ลงช่อง {gpu}
+	เพราะประโยคอย่าง "onboard graphics for graphics" อ่านแล้วแปลก
+]]
+local EasyIntegratedTemplates: { string } = table.freeze({
+	"Here's my checklist: {cpu} for the processor, {ram} of memory, and a {storage} for storage.",
+	"My notes say {cpu}, {ram} of RAM, and a {storage} — can you match that?",
+	"A friend wrote it all down for me: {cpu}, {ram} of RAM, and a {storage}.",
+	"I'm after {cpu} with {ram} of memory and a {storage}.",
+	"Make sure it has {cpu}, {ram} of RAM, and a {storage}.",
+	"Just give me a build with {cpu}, {ram} of RAM, and a {storage}.",
+})
+
+-- คลังคำ: ประโยคเสริมของระดับ Easy ตอนใช้การ์ดจอออนบอร์ด
 local IntegratedGpuNotes: { string } = table.freeze({
 	"Integrated graphics is fine, no separate card needed.",
 	"I don't need a dedicated graphics card at all.",
@@ -181,35 +197,70 @@ local function formatMoney(amount: number): string
 	return text
 end
 
--- จัดรูปคะแนนสเปก (0-100) ให้เป็นจำนวนเต็ม ลูกค้าไม่พูดทศนิยม
-local function formatScore(score: number): string
-	return tostring(math.floor(score + 0.5))
+-- จัดรูปความจุแบบที่คนพูด: 480 → "480GB", 1000 → "1TB", 4000 → "4TB"
+local function formatCapacity(sizeGB: number): string
+	if sizeGB >= 1000 and sizeGB % 1000 == 0 then
+		return string.format("%dTB", sizeGB // 1000)
+	end
+	return string.format("%dGB", sizeGB)
+end
+
+-- คำเรียกที่เก็บข้อมูลตามชนิด ลูกค้าพูดว่า "1TB SSD" ไม่ใช่ชื่อรุ่นยาว ๆ
+local function describeStorage(storage: Types.Storage): string
+	if storage.storageKind == "HDD" then
+		return formatCapacity(storage.sizeGB) .. " hard drive"
+	elseif storage.storageKind == "SATA_SSD" then
+		return formatCapacity(storage.sizeGB) .. " SSD"
+	end
+	return formatCapacity(storage.sizeGB) .. " NVMe SSD"
+end
+
+--[[
+	ประโยครายละเอียดของระดับ Easy — พูดถึง "ของ" ไม่ใช่ตัวเลข perfScore
+
+	ดึงชิ้นส่วนมาจากชุดอ้างอิงตัวเดียวกับที่ RequestGenerator ใช้คิดงบ
+	ลูกค้าจึงขอของที่งบของตัวเองซื้อไหวเสมอ ไม่มีทางขอเกินงบที่ตัวเองให้มา
+	ซีพียู/การ์ดจอเรียกด้วยชื่อรุ่น ส่วนแรม/ที่เก็บข้อมูลเรียกด้วยความจุ ตามที่คนพูดกันจริง
+]]
+local function buildEasyDetail(request: Types.CustomerRequest, rng: Random): string
+	local build = CatalogInspector.findReferenceBuild(request.targetSpec)
+
+	if build == nil then
+		-- กันเหนียว: ถ้าประกอบชุดอ้างอิงไม่ได้จริง ๆ อย่างน้อยอย่าให้ประโยคพัง
+		return "I am not really sure what parts I need — just put together something that works."
+	end
+
+	-- ชุดอ้างอิงไม่มีการ์ดจอแยก = ใช้ออนบอร์ดพอ ใช้เทมเพลตคนละชุดที่ไม่พูดถึงการ์ดจอ
+	if build.GPU == nil then
+		local detail = fill(pick(EasyIntegratedTemplates, rng), {
+			cpu = build.CPU.name,
+			ram = formatCapacity(build.RAM.sizeGB),
+			storage = describeStorage(build.Storage),
+		})
+		return detail .. " " .. pick(IntegratedGpuNotes, rng)
+	end
+
+	return fill(pick(DetailTemplates.Easy, rng), {
+		cpu = build.CPU.name,
+		gpu = build.GPU.name,
+		ram = formatCapacity(build.RAM.sizeGB),
+		storage = describeStorage(build.Storage),
+	})
 end
 
 -- เลือกและเติมประโยครายละเอียดตามระดับความยากของโจทย์
 local function buildDetail(request: Types.CustomerRequest, rng: Random): string
+	if request.difficulty == "Easy" then
+		return buildEasyDetail(request, rng)
+	end
+
 	local template = pick(DetailTemplates[request.difficulty], rng)
 
-	if request.difficulty == "Easy" then
-		local targetSpec = request.targetSpec
-		local detail = fill(template, {
-			cpu = formatScore(targetSpec.CPU),
-			gpu = formatScore(targetSpec.GPU),
-			ram = formatScore(targetSpec.RAM),
-			storage = formatScore(targetSpec.Storage),
-		})
-
-		-- GPU = 0 คือใช้การ์ดจอออนบอร์ดได้ ต่อประโยคอธิบายไว้กันผู้เล่นงงกับเลข 0
-		if targetSpec.GPU <= 0 then
-			detail ..= " " .. pick(IntegratedGpuNotes, rng)
-		end
-
-		return detail
-	elseif request.difficulty == "Normal" then
+	if request.difficulty == "Normal" then
 		return fill(template, { software = request.softwareName })
 	end
 
-	-- Hard: เหลือแค่คำบรรยายการใช้งานกว้าง ๆ ไม่บอกทั้งตัวเลขและชื่อซอฟต์แวร์
+	-- Hard: เหลือแค่คำบรรยายการใช้งานกว้าง ๆ ไม่บอกทั้งชื่อของและชื่อซอฟต์แวร์
 	return fill(template, { useCase = pick(UseCaseDescriptions[request.useCase], rng) })
 end
 

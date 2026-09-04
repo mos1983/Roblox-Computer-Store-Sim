@@ -1,5 +1,5 @@
 --!strict
--- CPU.luau — แคตตาล็อกซีพียู 9 รุ่น (AM5 5 รุ่น / LGA1700 4 รุ่น)
+-- CPU.luau — แคตตาล็อกซีพียู 10 รุ่น (AM5 5 รุ่น / LGA1700 5 รุ่น)
 -- ราคาเป็นบาท อ้างอิงราคาตลาดไทยโดยประมาณ (JIB/Advice) ไว้ปรับได้ที่นี่ที่เดียว
 -- perfScore ต้องอยู่ในช่วงของ tier: t1=0-20, t2=21-40, t3=41-60, t4=61-80, t5=81-100
 
@@ -13,12 +13,27 @@ local CPUs: { Types.CPU } = {
 		category = "CPU",
 		price = 1690,
 		watt = 46,
-		perfScore = 12,
+		perfScore = 9,
 		tier = 1,
 		socket = "LGA1700",
 		cores = 2,
 		threads = 2,
 		boostClockGHz = 3.4,
+		hasIGPU = true,
+	},
+
+	{
+		id = "cpu_pentium_g7400",
+		name = "Intel Pentium Gold G7400",
+		category = "CPU",
+		price = 2190,
+		watt = 46,
+		perfScore = 14,
+		tier = 1,
+		socket = "LGA1700",
+		cores = 2,
+		threads = 4,
+		boostClockGHz = 3.7,
 		hasIGPU = true,
 	},
 
@@ -29,7 +44,7 @@ local CPUs: { Types.CPU } = {
 		category = "CPU",
 		price = 2690,
 		watt = 58,
-		perfScore = 32,
+		perfScore = 21,
 		tier = 2,
 		socket = "LGA1700",
 		cores = 4,
@@ -43,7 +58,7 @@ local CPUs: { Types.CPU } = {
 		category = "CPU",
 		price = 5190,
 		watt = 65,
-		perfScore = 38,
+		perfScore = 32,
 		tier = 2,
 		socket = "AM5",
 		cores = 6,

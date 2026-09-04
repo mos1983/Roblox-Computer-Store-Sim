@@ -37,7 +37,9 @@ local UseCaseWeights: { [UseCase]: SpecProfile } = table.freeze({
 --[[
 	สูตรประมาณราคาของสเปกเป้าหมาย: BASE_COST + ผลรวม(perfScore × PRICE_PER_POINT ของหมวดนั้น)
 	BASE_COST คิดรวมเมนบอร์ด + PSU + เคส ซึ่งยังไม่ผูกกับสเปกที่ลูกค้าขอ
-	TODO: เปลี่ยนไปคิดจากราคาจริงในแคตตาล็อกเมื่อมีข้อมูลครบทั้ง 7 หมวด
+
+	⚠️ ตอนนี้เป็น "ทางสำรอง" แล้ว — RequestGenerator คิดงบจากราคาจริงในแคตตาล็อกเป็นหลัก
+	(CatalogInspector.findReferenceBuild) จะตกมาใช้สูตรนี้ก็ต่อเมื่อประกอบชุดอ้างอิงไม่ได้เท่านั้น
 ]]
 local BudgetEstimate: BudgetEstimateConfig = table.freeze({
 	BASE_COST = 6000,
