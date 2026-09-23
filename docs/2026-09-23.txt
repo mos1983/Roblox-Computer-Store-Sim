@@ -1,0 +1,170 @@
+บันทึกการทำงาน วันที่ 23 กันยายน 2026
+================================================================
+
+ขอบเขต : เชื่อม UI ทั้งหมดเข้าด้วยกัน (ขั้นที่ 1 ของงาน UI)
+         สำรวจโค้ดเดิม -> เสนอแผน -> ตกลงรายละเอียด -> เขียนระบบหน้าจอ กล้อง และการคลิกวัตถุ 3D
+สถานะ  : เขียนโค้ดเสร็จแล้ว แต่ยังไม่ได้ทดสอบใน Studio
+
+
+สรุปสั้น
+----------------------------------------------------------------
+- ฝั่ง client เปลี่ยนจากไฟล์กล้องไฟล์เดียว (FirstPersonCamera) เป็น 6 โมดูล
+  แบ่งเป็นโฟลเดอร์ UI / Camera / Interaction / Util (รวมประมาณ 850 บรรทัด)
+- เปลี่ยนหน้าจอได้ครบ 4 หน้า: Title, Store, Upgrade, Workshop ผ่าน UIController.goTo()
+- กล้องมี 2 โหมด (CamPart / CamPart2) ย้ายระหว่างโหมดแบบนุ่มภายใน 1 วินาที
+- คลิก Computer ในร้านด้วย raycast (ไม่ใช้ ClickDetector) และมีไฮไลต์ตอนชี้
+- หา instance ทุกตัวผ่าน SafeFind ถ้าหาไม่เจอจะ warn path เต็มแล้วข้ามไป ระบบอื่นไม่พังตาม
+
+
+1. สำรวจโค้ดเดิม
+----------------------------------------------------------------
+- src/client มีแค่ 2 ไฟล์ คือ init.client.luau กับ Systems/FirstPersonCamera.luau ยังไม่มีโค้ด UI เลย
+- src/shared มี 13 ไฟล์ เป็นข้อมูลเกมทั้งหมด (Types, Enums, แคตตาล็อกชิ้นส่วน 46 ชิ้น,
+  ซอฟต์แวร์ 22 ตัว, CatalogInspector) ส่วน Hello.luau เป็นของเหลือจาก template ของ Rojo ไม่มีใครใช้
+- ฝั่ง server ยังไม่มี RemoteEvent สักตัว (init.server.luau มีแค่ print)
+  Balance / Day / QuestBox / Dialogue จึงยังไม่มีข้อมูลจาก server มาแสดง
+- default.project.json map src/shared, src/server, src/client ตามปกติ
+  และมี Workspace (Baseplate) / Lighting / SoundService ติดมาจาก template ของ Rojo
+  Rojo ไม่ลบของใน Workspace แต่จะเขียน property ของ Baseplate และ Lighting ทับทุกครั้งที่ connect
+
+ปัญหาที่เจอใน FirstPersonCamera เดิม
+- WaitForChild("CamPart") ไม่มี timeout และอยู่หัวไฟล์ ถ้าไม่มี CamPart ทั้ง client จะค้างตั้งแต่ตอน require
+- รู้จักแค่ CamPart ยังไม่รองรับ CamPart2 ของโหมด Workshop
+- กล้องหันตามเมาส์ตลอด แม้ตอนเปิดหน้า Upgrade อยู่
+- มีโค้ดล็อกตัวละคร ทั้งที่ผู้เล่นไม่มีตัวละคร
+
+จุดที่ CLAUDE.md ไม่ตรงกับไฟล์จริง
+- path ของ DevTest ผิด ไฟล์จริงคือ src/server/Systems/DevTest.luau (แก้แล้ว)
+- DevPanel.client.luau ไม่มีอยู่จริง (ตัดออกแล้ว)
+- หัวข้อระบบหลักเรียกระดับโจทย์ว่า Clear/Unclear/Hardest แต่โค้ดใช้ Easy/Normal/Hard (ยังไม่ได้แก้)
+
+
+2. สิ่งที่ตกลงกันก่อนลงมือ
+----------------------------------------------------------------
+1. ผู้เล่นไม่มีตัวละคร -> ตัดโค้ดล็อกตัวละครออกจากระบบกล้อง
+2. Workshop ยังไม่มีปุ่มกลับ -> จะทำในขั้น GUI Part2
+3. เปิด Upgrade แล้วซ่อน Main (tween ลง) ปิด Upgrade แล้ว Main tween กลับขึ้นมา
+4. SettingButton ข้ามไปก่อน เพราะยังไม่มีหน้า Setting
+5. วันนี้ทำแค่เชื่อมหน้าจอ ส่วน RemoteEvent ไว้ทำในขั้น UI Detailing
+6. ไม่สร้าง DevPanel และไม่แก้ default.project.json (ถ้ายังไม่มีผลเสีย)
+
+
+3. โครงสร้างใหม่ฝั่ง client
+----------------------------------------------------------------
+src/client/
+  init.client.luau                     LocalScript ตัวเดียวของเกม เริ่มระบบ Camera -> Interaction -> UI
+                                       แต่ละระบบห่อ pcall แยกกัน ตัวไหนพังตัวอื่นยังทำงานต่อ
+  Util/SafeFind.luau                   หา instance ตาม path มี timeout และ warn path เต็มถ้าหาไม่เจอ
+  UI/UIController.luau                 ตาราง SCREENS, goTo(), ผูกปุ่ม, ลงทะเบียน Computer
+  UI/UIAnimator.luau                   slideIn / slideOut / scaleTo (ไฟล์เดียวที่ใช้ TweenService)
+  UI/ButtonEffect.luau                 ปุ่มขยายตอนชี้ หดตอนกด ใส่ให้ทุกปุ่มอัตโนมัติ
+  Camera/CameraController.luau         แทน FirstPersonCamera: โหมด Store / Workshop + เอียงตามเคอร์เซอร์
+  Interaction/InteractionService.luau  raycast สำหรับชี้และคลิกวัตถุ 3D
+
+ทิศทางการ require (ไม่มี require วนกัน)
+  init -> UIController -> UIAnimator, ButtonEffect, CameraController, InteractionService
+  CameraController กับ InteractionService ไม่รู้จัก UIController
+  การผูก "คลิก Computer -> เปิด Upgrade" จึงทำใน UIController
+
+
+4. การทำงานของแต่ละหน้าจอ (ตาราง SCREENS ใน UIController)
+----------------------------------------------------------------
+Title     แสดง Title, ซ่อน Main/Upgrade, กล้องนิ่งที่ CamPart, คลิก 3D ไม่ได้
+Store     แสดง Main, กล้องอยู่ที่ CamPart และเอียงตามเคอร์เซอร์, คลิก Computer ได้
+Upgrade   Main เลื่อนลงไปหลบ, Upgrade เลื่อนลงมาจากขอบบน, กล้องหยุดเอียง, คลิก 3D ไม่ได้
+Workshop  Main เลื่อนลงไปหลบ, กล้องเลื่อนไป CamPart2 ภายใน 1 วินาที, หยุดเอียง, คลิก 3D ไม่ได้
+
+ปุ่มที่ผูกไว้
+  Title.Buttons.Play                     -> Store
+  Main.WorkshopButton                    -> Workshop
+  Upgrade.Body.Header.Close              -> Store
+  Workspace.Store.Furnitures.Computer    -> Upgrade (คลิกวัตถุ 3D)
+  Main.SettingButton                     ยังไม่ผูก
+
+
+5. การตัดสินใจเชิงเทคนิคที่ควรจำ
+----------------------------------------------------------------
+- ย้ายกล้องระหว่างโหมดด้วย lerp ใน RenderStep ไม่ใช้ TweenService
+  เพราะ RenderStep เขียน Camera.CFrame ทับทุกเฟรม ถ้าใช้ tween จะโดนทับจนไม่เห็นผล
+- เปิด/ปิดหน้าด้วยการเลื่อน Position แทนการ fade หรือ pop
+  เพราะ Frame ไม่มี GroupTransparency (มีเฉพาะ CanvasGroup)
+  และ pop ต้องขยายจาก AnchorPoint ซึ่งไม่รู้ว่าตั้งไว้เท่าไร
+- tween ใหม่บน instance เดิมจะยกเลิกตัวเก่าก่อนเสมอ กดรัวๆ ก็ไม่ตีกัน
+  และมีตัวกันกรณีที่ Completed มาช้ากว่าคำสั่งถัดไป (deferred event)
+- raycast: ใช้ GetMouseLocation คู่กับ ViewportPointToRay และ input.Position คู่กับ ScreenPointToRay
+  ถ้าจับคู่ผิด จุดคลิกจะเพี้ยนไปเท่าความสูง topbar
+- ray ทะลุ part ที่ใสสนิท (เช่น CamPart2) ได้ แต่ของทึบจะบังการคลิกเหมือนของจริง
+- คลิกที่โดนปุ่ม UI (gameProcessedEvent) จะไม่ทะลุไปถึงวัตถุ 3D
+- ButtonEffect ใช้ UIScale ไม่แตะ Size/Position ที่ออกแบบไว้
+  ปุ่มไหนไม่อยากได้เอฟเฟกต์ ให้ใส่ Attribute NoButtonEffect = true
+  ปุ่มที่ AnchorPoint ไม่ใช่ 0.5, 0.5 จะขยายเยื้องไปทางขวาล่างเล็กน้อย
+- ตอนซ่อนหน้าจอจะรีเซ็ตขนาดปุ่มข้างในด้วย เพราะ Roblox อาจไม่ยิง InputEnded ถ้าปุ่มหายไประหว่างที่ชี้อยู่
+- UIController จะเตือนถ้ายังมีสคริปต์ฝังอยู่ใน GUI (เช่น OnClick ในปุ่ม Play)
+- หา CamPart / CamPart2 / Computer ใน background เพื่อไม่ให้บล็อกระบบอื่น
+
+
+6. ไฟล์ที่เปลี่ยน
+----------------------------------------------------------------
+ไฟล์ใหม่
+  src/client/Util/SafeFind.luau                       49 บรรทัด
+  src/client/UI/UIController.luau                    205 บรรทัด
+  src/client/UI/UIAnimator.luau                      147 บรรทัด
+  src/client/UI/ButtonEffect.luau                     89 บรรทัด
+  src/client/Camera/CameraController.luau            172 บรรทัด
+  src/client/Interaction/InteractionService.luau     168 บรรทัด
+
+ไฟล์ที่แก้
+  src/client/init.client.luau    เขียนใหม่ทั้งไฟล์ (23 บรรทัด)
+  CLAUDE.md                      เพิ่มรายชื่อไฟล์ฝั่ง client และกฎเรื่อง SafeFind / SCREENS
+                                 แก้ path ของ DevTest และตัดบรรทัด DevPanel ออก
+
+ไฟล์ที่ต้องลบ (ยังค้างอยู่ ดูข้อ 8)
+  src/client/Systems/FirstPersonCamera.luau    ถูกแทนด้วย CameraController
+  src/shared/Hello.luau                        ไม่มีใครใช้
+
+
+7. สถานะการทดสอบ
+----------------------------------------------------------------
+- rojo sourcemap : ผ่าน โครงสร้างถูกต้อง (Client เป็น LocalScript มีโฟลเดอร์ Camera / Interaction / UI / Util)
+- rojo build     : ผ่าน
+- typecheck      : ยังไม่ได้ทำ (เครื่องยังไม่มี luau-lsp)
+- ทดสอบใน Studio : ยังไม่ได้ทำ
+
+สิ่งที่ควรเห็นตอนทดสอบใน Studio
+  1. เริ่มเกม -> หน้า Title และกล้องนิ่งที่ CamPart
+  2. กด Play -> Title หายไป, Main เลื่อนขึ้นมาจากขอบล่าง, กล้องเอียงตามเคอร์เซอร์
+  3. ชี้ Computer -> Highlight ติด
+  4. คลิก Computer -> Main เลื่อนลงไปหลบ, Upgrade เลื่อนลงมาจากขอบบน, กล้องหยุดเอียง
+  5. กด Close -> Upgrade เลื่อนขึ้นออกไป, Main เลื่อนกลับขึ้นมา
+  6. กด WorkshopButton -> Main เลื่อนลงไปหลบ, กล้องเลื่อนไป CamPart2 (ตอนนี้ยังกลับไม่ได้)
+  ถ้ามีอะไรผิด ให้ดู Output ที่ขึ้นต้นด้วย [SafeFind] [UIController] [CameraController] หรือ [Client]
+
+
+8. งานที่ยังค้าง
+----------------------------------------------------------------
+ต้องทำก่อนทดสอบ
+- ลบไฟล์เก่า 2 ไฟล์ (Claude Code ลบเองไม่ได้เพราะระบบสิทธิ์บล็อกไว้)
+      git rm src/client/Systems/FirstPersonCamera.luau src/shared/Hello.luau
+  แล้ว connect Rojo ใหม่ ถ้ายังไม่ลบเกมก็ยังทำงานได้ เพราะไม่มีไฟล์ไหน require สองไฟล์นี้แล้ว
+- ลบ LocalScript "OnClick" ใน Title.Buttons.Play ใน Studio
+- เช็คว่า CamPart2 เป็น Anchored
+
+ต้องสังเกตตอนทดสอบ
+- ถ้าขึ้น warn ว่าหา PlayerGui.Title ไม่เจอ สาเหตุที่น่าจะเป็นคือปิด CharacterAutoLoads ไว้
+  Roblox อาจไม่ copy ของใน StarterGui เข้า PlayerGui ถ้าผู้เล่นไม่มีตัวละคร ต้องเพิ่มโค้ด clone GUI เอง
+- ถ้าเปิด Workspace.StreamingEnabled อยู่ ฝั่ง client อาจโหลด CamPart2 หรือ Computer ไม่มา
+- ถ้าปรับ Lighting ใน Studio แล้วค่าเด้งกลับหลัง connect Rojo ให้ลบ block Workspace / Lighting
+  ใน default.project.json
+
+ขั้นถัดไป
+- GUI Part2 : GUI ของ Workshop และปุ่มกลับไป Store
+- UI Detailing : RemoteEvent ส่งข้อมูลโจทย์ (CustomerRequestPublic), เงิน และวัน มาแสดงใน HUD
+- หน้า Setting (ข้ามไว้ก่อน)
+
+งานอื่นที่เจอวันนี้
+- ติดตั้ง luau-lsp เพื่อตรวจ type (ค้างมาตั้งแต่วันที่ 4 และโค้ดใหม่วันนี้ก็ยังไม่ผ่านตัวตรวจ)
+- RequestDialogue.luau: ลิสต์คำบรรยายสาย editing มีประโยค "grinding out some heavy PC games"
+  ซึ่งเป็นของสาย gaming และมีประโยคซ้ำใน Greetings / Intents อย่างละ 1 ประโยค
+  (ประโยคที่ซ้ำจะถูกสุ่มบ่อยเป็นสองเท่า)
+- แก้ชื่อระดับโจทย์ใน CLAUDE.md ให้ตรงกับโค้ด (Easy / Normal / Hard)
+- งานค้างอื่นๆ (Compatibility, Scoring ฯลฯ) ดู docs/day4.md ข้อ 9
