@@ -7,11 +7,17 @@
 	  ขยับด้วย Position จึงไม่ขึ้นกับ AnchorPoint ที่ตั้งไว้ใน Studio
 	  ไม่ใช้วิธี fade เพราะ Frame ไม่มี GroupTransparency (มีแค่ CanvasGroup)
 	- scaleTo : ขยาย/หดรอบขนาดเดิมผ่าน UIScale ใช้กับเอฟเฟกต์ปุ่ม
+	- blurIn / blurOut : เบลอฉากหลัง (โลก 3D) ผ่าน BlurEffect "UIBlur" ใน Lighting — GUI ไม่ถูกเบลอ
+	- highlightIn / highlightOut : ค่อยๆ แสดง/จาง Highlight ของวัตถุ 3D (InteractionService ใช้ตอนชี้)
+	- fadeIn / fadeOut : ค่อยๆ แสดง/ซ่อน CanvasGroup ทั้งก้อนด้วย GroupTransparency (LoadingScreen ใช้)
 
 	tween ใหม่บน instance เดิมจะยกเลิกตัวเก่าก่อนเสมอ กดรัวๆ ก็ไม่ตีกัน
 	และหน้าจอจะจบที่สถานะของคำสั่งล่าสุดเสมอ
+	ข้อควรระวัง: ยกเลิกตาม instance ไม่ใช่ตาม property ถ้าวันหน้ามีสองฟังก์ชัน tween คนละ property
+	บน instance เดียวกัน (เช่น fade กับ slide บน frame เดียว) ตัวหลังจะยกเลิกตัวแรกทิ้ง
 ]]
 
+local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 
 export type Edge = "Top" | "Bottom"
@@ -25,6 +31,17 @@ local EDGE_OFFSETS: { [Edge]: UDim2 } = {
 local SLIDE_IN_INFO = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local SLIDE_OUT_INFO = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 local SCALE_INFO = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local BLUR_INFO = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local HIGHLIGHT_INFO = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local FADE_INFO = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+
+local BLUR_NAME: string = "UIBlur"
+local BLUR_SIZE: number = 18
+
+-- ค่า transparency ของ Highlight ตอนแสดง (1 = ใสสนิท = ซ่อน)
+local HIGHLIGHT_FILL_SHOWN: number = 0.75
+local HIGHLIGHT_OUTLINE_SHOWN: number = 0
+local HIGHLIGHT_HIDDEN: number = 1
 
 -- ตารางแบบ weak key: instance ที่ถูกลบไปแล้วจะหลุดออกจากตารางเอง ไม่ค้างในหน่วยความจำ
 local WEAK_KEYS = { __mode = "k" }
@@ -32,6 +49,7 @@ local activeTweens: { [Instance]: Tween } = setmetatable({}, WEAK_KEYS) :: any
 local homePositions: { [GuiObject]: UDim2 } = setmetatable({}, WEAK_KEYS) :: any
 local baseScales: { [UIScale]: number } = setmetatable({}, WEAK_KEYS) :: any
 local wantShown: { [GuiObject]: boolean } = setmetatable({}, WEAK_KEYS) :: any
+local blurEffect: BlurEffect? = nil
 
 local UIAnimator = {}
 
@@ -142,6 +160,89 @@ end
 function UIAnimator.scaleTo(guiObject: GuiObject, factor: number): ()
 	local uiScale, base = scaleOf(guiObject)
 	UIAnimator.tween(uiScale, SCALE_INFO, { Scale = base * factor })
+end
+
+--[[
+	BlurEffect "UIBlur" ใน Lighting ถ้ายังไม่มีจะสร้างให้ (สร้างฝั่ง client จึงเบลอเฉพาะจอผู้เล่นคนนี้)
+	Enabled เปิดค้างไว้ตลอด คุมความเบลอด้วย Size อย่างเดียว
+	ห้ามปิด Enabled ตอนเบลอออก เพราะถ้าปิดตอน tween ยังไม่จบภาพจะกระพริบ
+]]
+local function blurOf(): BlurEffect
+	local cached = blurEffect
+	if cached ~= nil and cached.Parent == Lighting then
+		return cached
+	end
+
+	local found = Lighting:FindFirstChild(BLUR_NAME)
+	local blur: BlurEffect
+	if found ~= nil and found:IsA("BlurEffect") then
+		blur = found :: BlurEffect
+	else
+		blur = Instance.new("BlurEffect")
+		blur.Name = BLUR_NAME
+		blur.Size = 0
+		blur.Parent = Lighting
+	end
+	blur.Enabled = true
+	blurEffect = blur
+	return blur
+end
+
+-- tween ต่อจากค่าปัจจุบัน ถ้าสั่งกลับทางตอนกำลังเบลอออกครึ่งทาง จะไม่กระโดดไป 0 ก่อน
+local function setBlurSize(size: number, instant: boolean?): ()
+	local blur = blurOf()
+	if instant then
+		UIAnimator.cancel(blur)
+		blur.Size = size
+		return
+	end
+	UIAnimator.tween(blur, BLUR_INFO, { Size = size })
+end
+
+-- เบลอฉากหลังขึ้นไปที่ BLUR_SIZE ใน 0.35 วินาที (instant = เบลอทันที)
+function UIAnimator.blurIn(instant: boolean?): ()
+	setBlurSize(BLUR_SIZE, instant)
+end
+
+-- เบลอกลับเป็น 0 ใช้เวลาเท่ากับ blurIn (instant = ชัดทันที)
+function UIAnimator.blurOut(instant: boolean?): ()
+	setBlurSize(0, instant)
+end
+
+--[[
+	Highlight เปิด Enabled ค้างไว้ตลอด คุมด้วย FillTransparency + OutlineTransparency อย่างเดียว
+	ทั้งสองค่าอยู่ใน tween ตัวเดียวกัน จึงยกเลิกพร้อมกันเสมอ ชี้เข้าออกรัวๆ ค่าไม่กระตุกสู้กัน
+	และ tween ต่อจากค่าปัจจุบัน ถ้าออกกลางทางจะจางจากจุดนั้นเลย
+]]
+local function setHighlightTransparency(highlight: Highlight, fill: number, outline: number, instant: boolean?): ()
+	highlight.Enabled = true
+	if instant then
+		UIAnimator.cancel(highlight)
+		highlight.FillTransparency = fill
+		highlight.OutlineTransparency = outline
+		return
+	end
+	UIAnimator.tween(highlight, HIGHLIGHT_INFO, { FillTransparency = fill, OutlineTransparency = outline })
+end
+
+-- ค่อยๆ แสดง Highlight ใน 0.2 วินาที (instant = แสดงทันที)
+function UIAnimator.highlightIn(highlight: Highlight, instant: boolean?): ()
+	setHighlightTransparency(highlight, HIGHLIGHT_FILL_SHOWN, HIGHLIGHT_OUTLINE_SHOWN, instant)
+end
+
+-- ค่อยๆ จาง Highlight จนใสสนิท ใช้เวลาเท่ากับ highlightIn (instant = ซ่อนทันที)
+function UIAnimator.highlightOut(highlight: Highlight, instant: boolean?): ()
+	setHighlightTransparency(highlight, HIGHLIGHT_HIDDEN, HIGHLIGHT_HIDDEN, instant)
+end
+
+-- ค่อยๆ แสดง CanvasGroup ใน 0.3 วินาที คืน Tween ไว้ให้ผู้เรียกรอ Completed ได้
+function UIAnimator.fadeIn(group: CanvasGroup): Tween
+	return UIAnimator.tween(group, FADE_INFO, { GroupTransparency = 0 })
+end
+
+-- ค่อยๆ ซ่อน CanvasGroup จนใสสนิท ใช้เวลาเท่ากับ fadeIn (ไม่ปิด Visible ให้ ผู้เรียกจัดการเอง)
+function UIAnimator.fadeOut(group: CanvasGroup): Tween
+	return UIAnimator.tween(group, FADE_INFO, { GroupTransparency = 1 })
 end
 
 return table.freeze(UIAnimator)

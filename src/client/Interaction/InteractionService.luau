@@ -5,7 +5,8 @@
 
 	ใช้งาน:
 		InteractionService.register(computer, function() ... end, highlight)
-	- เคอร์เซอร์ชี้โดน target (part ไหนข้างในก็ได้) → เปิด Highlight ที่ให้มา
+	- เคอร์เซอร์ชี้โดน target (part ไหนข้างในก็ได้) → Highlight ที่ให้มาค่อยๆ แสดง ชี้ออกแล้วค่อยๆ จาง
+	  (tween ผ่าน UIAnimator ตามกฎใน CLAUDE.md, Enabled เปิดค้างไว้ คุมด้วย transparency อย่างเดียว)
 	- คลิกโดน → เรียก onClick
 	- คลิกที่ UI รับไปแล้ว (gameProcessedEvent) จะไม่ทะลุมาถึงวัตถุ 3D
 	- part ที่ใสสนิทและไม่ใช่ target (เช่น CamPart2 หรือกำแพงล่องหน) ray จะทะลุผ่านไป
@@ -16,6 +17,8 @@
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+
+local UIAnimator = require(script.Parent.Parent.UI.UIAnimator)
 
 local RENDER_BIND_NAME: string = "InteractionHover"
 local MAX_DISTANCE: number = 500 -- ระยะ ray (stud) ร้านเล็ก เท่านี้เหลือเฟือ
@@ -71,13 +74,18 @@ local function findTarget(ray: Ray): Registration?
 	return nil
 end
 
-local function setHighlight(registration: Registration?, on: boolean): ()
+local function setHighlight(registration: Registration?, on: boolean, instant: boolean?): ()
 	if registration == nil then
 		return
 	end
 	local highlight = registration.highlight
-	if highlight ~= nil then
-		highlight.Enabled = on
+	if highlight == nil then
+		return
+	end
+	if on then
+		UIAnimator.highlightIn(highlight, instant)
+	else
+		UIAnimator.highlightOut(highlight, instant)
 	end
 end
 
@@ -127,13 +135,13 @@ end
 
 --[[
 	ลงทะเบียนวัตถุ 3D ที่คลิกได้ target เป็น Model หรือ BasePart ก็ได้
-	highlight (ถ้ามี) จะถูกปิดไว้ก่อน แล้วเปิดเฉพาะตอนเคอร์เซอร์ชี้
+	highlight (ถ้ามี) จะถูกซ่อนทันทีก่อน (ใสสนิท) แล้วค่อยๆ แสดงเฉพาะตอนเคอร์เซอร์ชี้
 	คืนฟังก์ชันสำหรับยกเลิกการลงทะเบียน
 ]]
 function InteractionService.register(target: Instance, onClick: () -> (), highlight: Highlight?): () -> ()
 	local registration: Registration = { onClick = onClick, highlight = highlight }
 	registrations[target] = registration
-	setHighlight(registration, false)
+	setHighlight(registration, false, true)
 
 	return function(): ()
 		if registrations[target] == registration then
@@ -145,7 +153,7 @@ function InteractionService.register(target: Instance, onClick: () -> (), highli
 	end
 end
 
--- เปิด/ปิดการชี้และคลิกวัตถุ 3D ทั้งหมด (ปิดแล้ว Highlight ที่ค้างอยู่จะดับด้วย)
+-- เปิด/ปิดการชี้และคลิกวัตถุ 3D ทั้งหมด (ปิดแล้ว Highlight ที่ค้างอยู่จะค่อยๆ จางหาย ไม่วับ)
 function InteractionService.setEnabled(value: boolean): ()
 	enabled = value
 	if not value then

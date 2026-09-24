@@ -5,16 +5,20 @@
 
 	หน้าจอแต่ละหน้ากำหนดไว้ในตาราง SCREENS ที่เดียว: UI ไหนแสดง กล้องอยู่โหมดไหน
 	เอียงกล้องตามเคอร์เซอร์ได้ไหม คลิกวัตถุ 3D ได้ไหม — จะเพิ่มหน้าใหม่ก็แค่เพิ่มแถว
+	ถ้าหน้าใหม่กล้องอยู่คนละโหมดกับหน้าเดิม goTo จะใช้ LoadingScreen.transition() บังจอให้เอง
 
 	GUI อยู่บน Roblox cloud: หา instance ผ่าน SafeFind ถ้าไม่เจอจะ warn แล้วข้ามเฉพาะส่วนนั้น
 	ปุ่มทุกตัวผูกจากไฟล์นี้ ห้ามฝัง LocalScript ไว้ในปุ่ม
 ]]
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local SafeFind = require(script.Parent.Parent.Util.SafeFind)
 local UIAnimator = require(script.Parent.UIAnimator)
 local ButtonEffect = require(script.Parent.ButtonEffect)
+local LoadingScreen = require(script.Parent.LoadingScreen)
+local DialogueController = require(script.Parent.DialogueController)
 local CameraController = require(script.Parent.Parent.Camera.CameraController)
 local InteractionService = require(script.Parent.Parent.Interaction.InteractionService)
 
@@ -24,22 +28,31 @@ type ScreenState = {
 	title: boolean, -- PlayerGui.Title.Enabled
 	main: boolean, -- GUI.Main.Visible
 	upgrade: boolean, -- GUI.Upgrade.Visible
+	blur: boolean, -- เบลอฉากหลัง (BlurEffect "UIBlur" ใน Lighting)
 	camera: CameraController.CameraMode,
 	look: boolean, -- เอียงกล้องตามเคอร์เซอร์
 	interact: boolean, -- คลิกวัตถุ 3D ได้
+	loadingText: string?, -- ข้อความบนจอโหลด ตอนเข้าหน้านี้จากหน้าที่กล้องอยู่คนละโหมด
 }
 
 --[[
 	สถานะของทุกหน้าจอ (GUI.Enabled เปิดค้างตลอด จึงไม่อยู่ในตาราง)
-	- Upgrade : Main เลื่อนลงไปหลบ ปิด Upgrade แล้ว Main เลื่อนกลับขึ้นมา
-	- Workshop: ยังไม่มีปุ่มกลับ (ทำใน GUI Part2) ตอนนี้จึงปิดการเอียงกล้องและการคลิกไว้ก่อน
+	- Upgrade : Main เลื่อนลงไปหลบ ฉากหลังเบลอ ปิด Upgrade แล้ว Main เลื่อนกลับขึ้นมาและภาพชัดเหมือนเดิม
+	- Workshop: เข้าผ่านจอโหลด ยังไม่มีปุ่มกลับ (ทำใน GUI Part2) ตอนนี้จึงปิดการเอียงกล้องและการคลิกไว้ก่อน
+	  loadingText ของ Store เตรียมไว้ให้ปุ่มกลับจาก Workshop
 	- Main.SettingButton ยังไม่มีหน้า Setting ปล่อยไว้ไม่ผูกอะไร
 ]]
 local SCREENS: { [ScreenName]: ScreenState } = {
-	Title = { title = true, main = false, upgrade = false, camera = "Store", look = false, interact = false },
-	Store = { title = false, main = true, upgrade = false, camera = "Store", look = true, interact = true },
-	Upgrade = { title = false, main = false, upgrade = true, camera = "Store", look = false, interact = false },
-	Workshop = { title = false, main = false, upgrade = false, camera = "Workshop", look = false, interact = false },
+	Title = { title = true, main = false, upgrade = false, blur = false, camera = "Store", look = false, interact = false },
+	Store = {
+		title = false, main = true, upgrade = false, blur = false, camera = "Store", look = true, interact = true,
+		loadingText = "กำลังกลับสู่หน้าร้าน",
+	},
+	Upgrade = { title = false, main = false, upgrade = true, blur = true, camera = "Store", look = false, interact = false },
+	Workshop = {
+		title = false, main = false, upgrade = false, blur = false, camera = "Workshop", look = false, interact = false,
+		loadingText = "กำลังเข้าสู่ห้องประกอบ",
+	},
 }
 
 -- ขอบจอที่ frame เลื่อนเข้า-ออก: Main หลบลงขอบล่าง ส่วน Upgrade ลงมาจากขอบบน
@@ -53,6 +66,8 @@ local UIController = {}
 
 local initialized: boolean = false
 local current: ScreenName? = nil
+local transitioning: boolean = false -- กำลังอยู่หลังจอโหลด
+local pendingScreen: ScreenName? = nil -- คำสั่ง goTo ที่เข้ามาระหว่างจอโหลด ทำต่อหลังจอโหลดหายไป
 
 local titleGui: ScreenGui? = nil
 local mainFrame: GuiObject? = nil
@@ -70,21 +85,8 @@ local function setFrameShown(frame: GuiObject?, shown: boolean, edge: UIAnimator
 	end
 end
 
---[[
-	เปลี่ยนไปหน้าจอ screen (instant = ข้าม animation ทั้งหมด ใช้ตอนเริ่มเกม)
-	เรียกซ้อนระหว่าง animation ได้ ผลสุดท้ายเป็นของคำสั่งล่าสุดเสมอ
-]]
-function UIController.goTo(screen: ScreenName, instant: boolean?): ()
-	local state = SCREENS[screen]
-	if state == nil then
-		warn(`[UIController] ไม่รู้จักหน้าจอ "{screen}"`)
-		return
-	end
-	if screen == current and not instant then
-		return
-	end
-	current = screen
-
+-- ใช้สถานะของหน้าจอ ยกเว้น interact ที่ goTo คุมเอง เพราะต้องปิดไว้ตลอดช่วงจอโหลด
+local function applyScreen(state: ScreenState, instant: boolean?): ()
 	-- Title เป็น ScreenGui ใช้ .Enabled (tween ไม่ได้)
 	local title = titleGui
 	if title ~= nil then
@@ -95,10 +97,61 @@ function UIController.goTo(screen: ScreenName, instant: boolean?): ()
 	end
 	setFrameShown(mainFrame, state.main, MAIN_EDGE, instant)
 	setFrameShown(upgradeFrame, state.upgrade, UPGRADE_EDGE, instant)
+	if state.blur then
+		UIAnimator.blurIn(instant)
+	else
+		UIAnimator.blurOut(instant)
+	end
 
-	CameraController.setMode(state.camera, instant)
+	CameraController.setMode(state.camera)
 	CameraController.setLookEnabled(state.look)
-	InteractionService.setEnabled(state.interact)
+end
+
+--[[
+	เปลี่ยนไปหน้าจอ screen (instant = ข้าม animation ทั้งหมด ใช้ตอนเริ่มเกม)
+	ถ้ากล้องต้องย้ายจุด (เช่น Store → Workshop) จะเอา LoadingScreen บังจอ แล้วเปลี่ยนทุกอย่างทันทีหลังจอ
+	ห้ามเลื่อนกล้องข้ามจุดเพราะจะทะลุกำแพง (กฎใน CLAUDE.md) ระหว่างนั้นปิดการคลิกวัตถุ 3D ไว้
+	ไม่ yield: จอโหลดทำงานใน task แยก ผู้เรียกไม่ต้องรอ
+	เรียกซ้อนได้ ผลสุดท้ายเป็นของคำสั่งล่าสุดเสมอ (ระหว่างจอโหลด คำสั่งใหม่จะรอทำต่อหลังจอโหลดหายไป)
+]]
+function UIController.goTo(screen: ScreenName, instant: boolean?): ()
+	local state = SCREENS[screen]
+	if state == nil then
+		warn(`[UIController] ไม่รู้จักหน้าจอ "{screen}"`)
+		return
+	end
+	if transitioning then
+		pendingScreen = screen
+		return
+	end
+	if screen == current and not instant then
+		return
+	end
+	local previous = current
+	current = screen
+
+	local cameraMoves = previous ~= nil and SCREENS[previous].camera ~= state.camera
+	if instant or not cameraMoves then
+		applyScreen(state, instant)
+		InteractionService.setEnabled(state.interact)
+		return
+	end
+
+	transitioning = true
+	InteractionService.setEnabled(false)
+	task.spawn(function(): ()
+		LoadingScreen.transition(state.loadingText, function(): ()
+			applyScreen(state, true) -- อยู่หลังจอโหลดแล้ว ไม่ต้องมี animation
+		end)
+		transitioning = false
+		InteractionService.setEnabled(state.interact)
+
+		local pending = pendingScreen
+		pendingScreen = nil
+		if pending ~= nil then
+			UIController.goTo(pending)
+		end
+	end)
 end
 
 -- หน้าจอที่แสดงอยู่ตอนนี้ (nil = ยังไม่ได้ init)
@@ -140,6 +193,14 @@ local function warnEmbeddedScripts(root: Instance): ()
 	end
 end
 
+-- บอก server ว่าผู้เล่นกด Play แล้ว (เริ่มนับเวลา spawn ลูกค้า) เรียกผ่าน task.spawn เพราะ SafeFind อาจรอ
+local function notifyGameStarted(): ()
+	local remote = SafeFind.path(ReplicatedStorage, "Remotes.GameStarted", "RemoteEvent") :: RemoteEvent?
+	if remote ~= nil then
+		remote:FireServer()
+	end
+end
+
 -- Computer อยู่ใน Workspace อาจต้องรอโหลด จึงเรียกผ่าน task.spawn ไม่ให้หน่วงส่วน UI
 local function registerComputer(): ()
 	local computer = SafeFind.path(workspace, "Store.Furnitures.Computer")
@@ -155,7 +216,9 @@ end
 
 --[[
 	เริ่มระบบ UI เรียกครั้งเดียวจาก init.client.luau หลัง CameraController และ InteractionService
-	ลำดับ: หา ScreenGui/frame หลัก → เข้าหน้า Title ทันที → ผูกปุ่ม → ใส่เอฟเฟกต์ปุ่ม → ลงทะเบียน Computer
+	ลำดับ: หา ScreenGui/frame หลัก → เตรียมจอโหลด → เข้าหน้า Title ทันที → ผูกปุ่ม → ใส่เอฟเฟกต์ปุ่ม
+	→ ลงทะเบียน Computer → เริ่ม DialogueController
+	ปุ่ม Play ส่ง Remotes.GameStarted ให้ server เริ่มส่งลูกค้า
 ]]
 function UIController.init(): ()
 	if initialized then
@@ -176,11 +239,15 @@ function UIController.init(): ()
 		upgradeFrame = SafeFind.path(gui, "Upgrade", "GuiObject", CHILD_TIMEOUT) :: GuiObject?
 	end
 
+	-- ต้องมาหลังหา Title/GUI เจอ: ของใน StarterGui มาพร้อมกัน PlayerGui.Loading ตัวจริง (ถ้ามี) จะมาถึงแล้ว
+	LoadingScreen.init(playerGui)
+
 	-- เข้าหน้า Title ทันที ไม่ว่าใน Studio จะเปิด/ปิด frame ไหนค้างไว้
 	UIController.goTo("Title", true)
 
 	bindButton(titleGui, "Buttons.Play", function(): ()
 		UIController.goTo("Store")
+		task.spawn(notifyGameStarted)
 	end)
 	bindButton(mainFrame, "WorkshopButton", function(): ()
 		UIController.goTo("Workshop")
@@ -200,6 +267,7 @@ function UIController.init(): ()
 	end
 
 	task.spawn(registerComputer)
+	task.spawn(DialogueController.init, mainFrame)
 end
 
 return table.freeze(UIController)

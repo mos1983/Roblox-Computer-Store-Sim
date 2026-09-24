@@ -7,8 +7,8 @@
 		โหมด Workshop → Workspace.CamPart2
 	เคอร์เซอร์อิสระ กล้องเอียงตามตำแหน่งเคอร์เซอร์ได้เล็กน้อย (UIController ปิดได้ตอนมีหน้าต่างเปิดอยู่)
 
-	ย้ายกล้องระหว่างโหมดด้วยการ lerp ใน RenderStep เอง ไม่ใช้ TweenService
-	เพราะ RenderStep เขียน Camera.CFrame ทับทุกเฟรม tween จะโดนทับจนไม่เห็นผล
+	เปลี่ยนโหมดแล้วกล้องย้ายไปจุดใหม่ทันที ไม่เลื่อนผ่านระหว่างทาง เพราะ CamPart กับ CamPart2
+	อยู่คนละห้อง เลื่อนไปจะทะลุกำแพง — UIController ใช้ LoadingScreen.transition() บังจอตอนย้าย (กฎใน CLAUDE.md)
 
 	หา CamPart / CamPart2 ใน background ถ้าหาไม่เจอจะ warn และใช้โหมดนั้นไม่ได้ แต่ไม่ทำให้ระบบอื่นค้าง
 ]]
@@ -35,7 +35,6 @@ local MODES: { [CameraMode]: ModeConfig } = {
 }
 
 local LOOK_SMOOTHING: number = 8 -- ยิ่งมากยิ่งตามเคอร์เซอร์ไว
-local TRANSITION_TIME: number = 1 -- วินาทีที่ใช้ย้ายกล้องระหว่างโหมด
 local RENDER_BIND_NAME: string = "CameraControllerUpdate"
 
 local CameraController = {}
@@ -47,19 +46,8 @@ local lookEnabled: boolean = false
 local parts: { [CameraMode]: BasePart } = {}
 local missingParts: { [CameraMode]: boolean } = {} -- หาแล้วไม่เจอ = ใช้โหมดนั้นไม่ได้
 
-local baseCFrame: CFrame? = nil -- ตำแหน่งกล้องก่อนเอียงตามเคอร์เซอร์ (nil = ยังไม่เคยวางกล้อง)
-local transitionFrom: CFrame? = nil -- จุดเริ่มของการย้ายโหมด (nil = ไม่ได้กำลังย้าย)
-local transitionElapsed: number = 0
 local currentYaw: number = 0
 local currentPitch: number = 0
-
--- ออกตัวช้า เร่งกลางทาง แล้วผ่อนตอนถึง กล้องจะไม่กระชาก
-local function easeInOutCubic(t: number): number
-	if t < 0.5 then
-		return 4 * t * t * t
-	end
-	return 1 - ((-2 * t + 2) ^ 3) / 2
-end
 
 local function onRenderStep(deltaTime: number): ()
 	local camera = workspace.CurrentCamera
@@ -72,20 +60,6 @@ local function onRenderStep(deltaTime: number): ()
 	if camera.CameraType ~= Enum.CameraType.Scriptable then
 		camera.CameraType = Enum.CameraType.Scriptable
 	end
-
-	-- ตำแหน่งฐาน: ระหว่างย้ายโหมด ค่อยๆ ไล่จากจุดเดิมไปหา part ของโหมดใหม่
-	local base = part.CFrame
-	local from = transitionFrom
-	if from ~= nil then
-		transitionElapsed += deltaTime
-		local progress = transitionElapsed / TRANSITION_TIME
-		if progress >= 1 then
-			transitionFrom = nil
-		else
-			base = from:Lerp(base, easeInOutCubic(progress))
-		end
-	end
-	baseCFrame = base
 
 	-- แปลงตำแหน่งเคอร์เซอร์เป็นช่วง -1..1 (0 = กลางจอ) แล้วคิดมุมที่อยากเอียงไป
 	local targetYaw = 0
@@ -106,7 +80,7 @@ local function onRenderStep(deltaTime: number): ()
 	currentYaw += (targetYaw - currentYaw) * alpha
 	currentPitch += (targetPitch - currentPitch) * alpha
 
-	camera.CFrame = base * CFrame.Angles(0, currentYaw, 0) * CFrame.Angles(currentPitch, 0, 0)
+	camera.CFrame = part.CFrame * CFrame.Angles(0, currentYaw, 0) * CFrame.Angles(currentPitch, 0, 0)
 end
 
 --[[
@@ -146,22 +120,24 @@ function CameraController.init(): ()
 end
 
 --[[
-	ย้ายกล้องไปโหมดที่ต้องการ instant = วางทันที ไม่เลื่อน (ใช้ตอนเริ่มเกม)
+	ย้ายกล้องไปโหมดที่ต้องการทันที (เฟรมถัดไป) และรีเซ็ตการเอียงกลับมามองตรง
+	ต้องมีจอโหลดบังไว้ก่อน — เรียกผ่าน UIController.goTo() ซึ่งจัดการ LoadingScreen ให้
 	ถ้า part ของโหมดนั้นหาไม่เจอ จะ warn แล้วอยู่โหมดเดิม
 ]]
-function CameraController.setMode(mode: CameraMode, instant: boolean?): ()
+function CameraController.setMode(mode: CameraMode): ()
 	if missingParts[mode] then
 		warn(`[CameraController] ใช้โหมด {mode} ไม่ได้ เพราะหา Workspace.{MODES[mode].partName} ไม่เจอ`)
 		return
 	end
-	if mode == currentMode and not instant then
+	if mode == currentMode then
+		-- โหมดเดิม (เช่น Store → Upgrade) ไม่รีเซ็ตการเอียง ไม่งั้นกล้องจะกระตุกกลับมามองตรง
+		-- ปล่อยให้ setLookEnabled(false) ค่อยๆ หันกลับเอง
 		return
 	end
 
 	currentMode = mode
-	-- เลื่อนจากตำแหน่งปัจจุบัน ถ้าสั่ง instant หรือยังไม่เคยวางกล้อง (baseCFrame = nil) จะวางทันที
-	transitionFrom = if instant then nil else baseCFrame
-	transitionElapsed = 0
+	currentYaw = 0
+	currentPitch = 0
 end
 
 -- เปิด/ปิดการเอียงกล้องตามเคอร์เซอร์ ปิดแล้วกล้องจะค่อยๆ กลับมามองตรง

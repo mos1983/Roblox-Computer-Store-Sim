@@ -1,7 +1,8 @@
 --!strict
 -- RequestDialogue.luau — สร้างประโยคที่ลูกค้าพูดจากโจทย์ 1 ราย
 -- ไม่ fix ประโยคตายตัว แต่สุ่มประกอบจากคลังคำย่อย เพื่อให้ผู้เล่นเจอข้อความไม่ซ้ำ
--- โครงสร้าง: {ทักทาย} {เกริ่นความต้องการ} {รายละเอียดตามระดับ} {ประโยคเรื่องงบ}
+-- โครงสร้าง: {ทักทาย} {เกริ่นความต้องการ} {รายละเอียดตามระดับ} {การ์ดจอออนบอร์ด (บางโจทย์)} {ประโยคเรื่องงบ}
+-- buildSections คืนแยกเป็นท่อนให้ dialogue GUI แสดงทีละท่อน ส่วน build คืนเป็นข้อความเดียว
 -- ตัวบทเป็นภาษาอังกฤษ ส่วนคอมเมนต์อธิบายเป็นภาษาไทย
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -221,13 +222,14 @@ end
 	ดึงชิ้นส่วนมาจากชุดอ้างอิงตัวเดียวกับที่ RequestGenerator ใช้คิดงบ
 	ลูกค้าจึงขอของที่งบของตัวเองซื้อไหวเสมอ ไม่มีทางขอเกินงบที่ตัวเองให้มา
 	ซีพียู/การ์ดจอเรียกด้วยชื่อรุ่น ส่วนแรม/ที่เก็บข้อมูลเรียกด้วยความจุ ตามที่คนพูดกันจริง
+	คืน (ประโยครายละเอียด, ประโยคการ์ดจอออนบอร์ด) — ตัวที่สองเป็น nil ถ้ามีการ์ดจอแยก
 ]]
-local function buildEasyDetail(request: Types.CustomerRequest, rng: Random): string
+local function buildEasyDetail(request: Types.CustomerRequest, rng: Random): (string, string?)
 	local build = CatalogInspector.findReferenceBuild(request.targetSpec)
 
 	if build == nil then
 		-- กันเหนียว: ถ้าประกอบชุดอ้างอิงไม่ได้จริง ๆ อย่างน้อยอย่าให้ประโยคพัง
-		return "I am not really sure what parts I need — just put together something that works."
+		return "I am not really sure what parts I need — just put together something that works.", nil
 	end
 
 	-- ชุดอ้างอิงไม่มีการ์ดจอแยก = ใช้ออนบอร์ดพอ ใช้เทมเพลตคนละชุดที่ไม่พูดถึงการ์ดจอ
@@ -237,19 +239,20 @@ local function buildEasyDetail(request: Types.CustomerRequest, rng: Random): str
 			ram = formatCapacity(build.RAM.sizeGB),
 			storage = describeStorage(build.Storage),
 		})
-		return detail .. " " .. pick(IntegratedGpuNotes, rng)
+		return detail, pick(IntegratedGpuNotes, rng)
 	end
 
-	return fill(pick(DetailTemplates.Easy, rng), {
+	local detail = fill(pick(DetailTemplates.Easy, rng), {
 		cpu = build.CPU.name,
 		gpu = build.GPU.name,
 		ram = formatCapacity(build.RAM.sizeGB),
 		storage = describeStorage(build.Storage),
 	})
+	return detail, nil
 end
 
--- เลือกและเติมประโยครายละเอียดตามระดับความยากของโจทย์
-local function buildDetail(request: Types.CustomerRequest, rng: Random): string
+-- เลือกและเติมประโยครายละเอียดตามระดับความยากของโจทย์ (ตัวที่สอง = ประโยคการ์ดจอออนบอร์ด ถ้ามี)
+local function buildDetail(request: Types.CustomerRequest, rng: Random): (string, string?)
 	if request.difficulty == "Easy" then
 		return buildEasyDetail(request, rng)
 	end
@@ -257,28 +260,39 @@ local function buildDetail(request: Types.CustomerRequest, rng: Random): string
 	local template = pick(DetailTemplates[request.difficulty], rng)
 
 	if request.difficulty == "Normal" then
-		return fill(template, { software = request.softwareName })
+		return fill(template, { software = request.softwareName }), nil
 	end
 
 	-- Hard: เหลือแค่คำบรรยายการใช้งานกว้าง ๆ ไม่บอกทั้งชื่อของและชื่อซอฟต์แวร์
-	return fill(template, { useCase = pick(UseCaseDescriptions[request.useCase], rng) })
+	return fill(template, { useCase = pick(UseCaseDescriptions[request.useCase], rng) }), nil
 end
 
 --[[
-	ประกอบข้อความที่ลูกค้าพูดจากโจทย์ 1 ราย
+	ประกอบข้อความที่ลูกค้าพูดจากโจทย์ 1 ราย แยกเป็นท่อนตามลำดับที่ dialogue GUI แสดง
+		Greetings → Intents → Details → (IntegratedGpuNote ถ้าใช้การ์ดจอออนบอร์ด) → BudgetPhrases
 	rng ตัวเดียวกัน + โจทย์เดียวกัน จะได้ข้อความเดิมเสมอ (deterministic)
 	หมายเหตุ: ตัวเลข targetSpec ถูกเปิดเผยผ่านข้อความเฉพาะระดับ Easy เท่านั้น
 ]]
-function RequestDialogue.build(request: Types.CustomerRequest, rng: Random): string
-	local greeting = pick(Greetings, rng)
-	local intent = pick(Intents, rng)
-	local detail = buildDetail(request, rng)
-	local budget = fill(pick(BudgetPhrases, rng), {
+function RequestDialogue.buildSections(request: Types.CustomerRequest, rng: Random): { string }
+	-- ลำดับการเรียก rng ต้องคงเดิม (ทักทาย → เกริ่น → รายละเอียด → งบ) seed เดิมจะได้ข้อความเดิม
+	local sections = { pick(Greetings, rng), pick(Intents, rng) }
+
+	local detail, integratedGpuNote = buildDetail(request, rng)
+	table.insert(sections, detail)
+	if integratedGpuNote ~= nil then
+		table.insert(sections, integratedGpuNote)
+	end
+
+	table.insert(sections, fill(pick(BudgetPhrases, rng), {
 		min = formatMoney(request.budgetMin),
 		max = formatMoney(request.budgetMax),
-	})
+	}))
+	return sections
+end
 
-	return table.concat({ greeting, intent, detail, budget }, " ")
+-- ข้อความทั้งหมดต่อกันเป็นประโยคเดียว (ใช้กับ CustomerRequestPublic.dialogue และ DevTest)
+function RequestDialogue.build(request: Types.CustomerRequest, rng: Random): string
+	return table.concat(RequestDialogue.buildSections(request, rng), " ")
 end
 
 return table.freeze(RequestDialogue)
